@@ -124,6 +124,23 @@ def delete_snapshot(snap_id: int):
     conn.close()
     return {"deleted": snap_id}
 
+@app.put("/api/snapshots/{snap_id}")
+def update_snapshot(snap_id: int, data: SnapshotIn):
+    conn = get_db()
+    snap = conn.execute("SELECT id FROM snapshots WHERE id = ?", (snap_id,)).fetchone()
+    if not snap:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+    conn.execute("UPDATE snapshots SET date = ? WHERE id = ?", (data.date, snap_id))
+    conn.execute("DELETE FROM assets WHERE snapshot_id = ?", (snap_id,))
+    for asset in data.assets:
+        conn.execute(
+            "INSERT INTO assets (snapshot_id, name, type, value, invested) VALUES (?, ?, ?, ?, ?)",
+            (snap_id, asset.name, asset.type, asset.value, asset.invested)
+        )
+    conn.commit()
+    conn.close()
+    return {"id": snap_id, "date": data.date}
+
 # ==================== ASSET DEFINITIONS ====================
 
 @app.get("/api/asset-definitions")

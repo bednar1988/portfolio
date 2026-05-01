@@ -7,23 +7,23 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --bg: #0a0c0f;
-    --surface: #111318;
-    --surface2: #181c23;
-    --border: #1e2430;
-    --accent: #c8a96e;
-    --accent2: #7eb8a4;
-    --accent3: #e87c6a;
-    --accent4: #7a9fd4;
-    --text: #e8e4dc;
-    --text2: #8a8880;
-    --text3: #4a4845;
-    --positive: #7eb8a4;
-    --negative: #e87c6a;
-    --font-display: 'DM Serif Display', serif;
-    --font-mono: 'DM Mono', monospace;
-  }
+:root {
+  --bg: #080a0e;
+  --surface: #0d1117;
+  --surface2: #131820;
+  --border: #1a2332;
+  --accent: #00ff9f;
+  --accent2: #00e5ff;
+  --accent3: #ff2d6b;
+  --accent4: #bf00ff;
+  --text: #e0f0ff;
+  --text2: #6a8aaa;
+  --text3: #2a4a6a;
+  --positive: #00ff9f;
+  --negative: #ff2d6b;
+  --font-display: 'DM Serif Display', serif;
+  --font-mono: 'DM Mono', monospace;
+}
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
     background: var(--bg);
@@ -36,7 +36,7 @@
     content: '';
     position: fixed;
     inset: 0;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.015'/%3E%3C/svg%3E");
     pointer-events: none;
     z-index: 0;
   }
@@ -74,7 +74,7 @@
   }
   .card::before {
     content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(200,169,110,0.2), transparent);
+    background: linear-gradient(90deg, transparent, rgba(0,229,255,0.15), transparent);
   }
   .card-title { font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text3); margin-bottom: 16px; }
   .section-title { font-family: var(--font-display); font-size: 20px; color: var(--text); margin-bottom: 16px; font-weight: 400; }
@@ -159,6 +159,27 @@
     .form-grid .btn { grid-column: 1/-1; }
     header { flex-direction: column; align-items: flex-start; gap: 12px; }
   }
+
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 500; backdrop-filter: blur(4px);
+  }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 32px; width: 90%; max-width: 800px;
+    max-height: 85vh; overflow-y: auto; position: relative;
+  }
+  .modal-title {
+    font-family: var(--font-display); font-size: 22px; font-weight: 400;
+    margin-bottom: 20px; color: var(--text);
+  }
+  .modal-close {
+    position: absolute; top: 20px; right: 20px;
+    background: none; border: none; color: var(--text2);
+    font-size: 20px; cursor: pointer; transition: color 0.2s;
+  }
+  .modal-close:hover { color: var(--text); }
 </style>
 </head>
 <body>
@@ -315,12 +336,26 @@
     </div>
   </div>
 </div>
-
+<div class="modal-overlay" id="edit-modal" style="display:none" onclick="if(event.target===this)closeEditModal()">
+  <div class="modal">
+    <button class="modal-close" onclick="closeEditModal()">✕</button>
+    <div class="modal-title">Edytuj snapshot</div>
+    <div class="date-input-row">
+      <label>Data:</label>
+      <input type="date" id="edit-snap-date">
+    </div>
+    <div id="edit-snap-rows"></div>
+    <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+      <button class="btn btn-ghost" onclick="addEditRow()">+ Dodaj pozycję</button>
+      <button class="btn" id="edit-save-btn" onclick="saveEditSnapshot()">💾 Zapisz zmiany</button>
+    </div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script>
 const API = '';  // same origin
-const COLORS = ['#c8a96e','#7eb8a4','#7a9fd4','#e87c6a','#b07ec8','#e8c46a','#6ab8d4','#d47a9f'];
+const COLORS = ['#00ff9f','#00e5ff','#bf00ff','#ff2d6b','#ffea00','#ff6b00','#00ff41','#ff00aa'];
 const ASSET_TYPES = ['ETF (akcje)','Obligacje','Lokata','Gotówka','Inne'];
 
 let snapshots = [];
@@ -467,7 +502,7 @@ function renderHistoryChart() {
     },
     scales: {
       x: { ticks: { color: '#4a4845', font: { family: 'DM Mono', size: 11 } }, grid: { color: '#1e2430' } },
-      y: { ticks: { color: '#4a4845', font: { family: 'DM Mono', size: 11 }, callback: v => fmt(v) }, grid: { color: '#1e2430' } }
+      y: { min: 0, ticks: { color: '#4a4845', font: { family: 'DM Mono', size: 11 }, callback: v => fmt(v) }, grid: { color: '#1e2430' } }
     }
   };
 
@@ -517,7 +552,10 @@ function renderHistoryTable() {
       <td style="color:var(--accent);font-weight:500">${fmt(tv)}</td>
       <td class="${change===null?'':change>=0?'positive':'negative'}">${change===null?'—':`${change>=0?'+':''}${fmt(change)} (${changePct}%)`}</td>
       <td>${snap.assets.map(a=>`<span style="color:var(--text3)">${a.name}:</span> <span>${fmt(a.value)}</span>`).join(' · ')}</td>
-      <td><button class="del-btn" onclick="deleteSnapshot(${snap.id})">✕</button></td>
+      <td style="display:flex;gap:8px;align-items:center">
+      <button class="del-btn" title="Edytuj" onclick="openEditModal(${snap.id})" style="color:var(--text2)">✎</button>
+      <button class="del-btn" title="Usuń" onclick="deleteSnapshot(${snap.id})">✕</button>
+      </td>
     </tr>`;
   }).join('');
 
@@ -529,7 +567,18 @@ function initSnapshotForm() {
   el('snap-date').value = new Date().toISOString().split('T')[0];
   const wrap = el('snapshot-rows');
   wrap.innerHTML = '';
-  assetDefs.forEach(d => addSnapRow(d.name, d.type));
+
+  // Build lookup from last snapshot: name -> { value, invested }
+  const lastLookup = {};
+  if (snapshots.length) {
+    const last = snapshots[snapshots.length - 1];
+    last.assets.forEach(a => { lastLookup[a.name] = { value: a.value, invested: a.invested }; });
+  }
+
+  assetDefs.forEach(d => {
+    const prev = lastLookup[d.name];
+    addSnapRow(d.name, d.type, '', prev ? prev.invested : '');
+  });
 }
 
 function addSnapRow(name='', type='ETF (akcje)', value='', invested='') {
@@ -537,6 +586,7 @@ function addSnapRow(name='', type='ETF (akcje)', value='', invested='') {
   const idx = wrap.children.length;
   const div = document.createElement('div');
   div.className = 'form-grid';
+
   div.innerHTML = `
     <div class="form-group">
       ${idx===0?'<label>Nazwa</label>':''}
@@ -552,7 +602,7 @@ function addSnapRow(name='', type='ETF (akcje)', value='', invested='') {
     </div>
     <div class="form-group">
       ${idx===0?'<label>Łącznie wpłacono (zł)</label>':''}
-      <input type="number" placeholder="0" value="${invested}" min="0" title="Ile łącznie wpłaciłeś do tej pozycji">
+      <input type="number" placeholder="0" value="${invested}" min="0" title="Ile łącznie wpłaciłeś do tej pozycji — prefillowane z ostatniego snapshotu">
     </div>
     <button class="btn btn-ghost" style="height:38px;margin-top:${idx===0?'22px':'0'}" onclick="this.parentElement.remove()">✕</button>
   `;
@@ -805,6 +855,87 @@ function toast(msg, type='') {
   t.textContent = msg;
   t.className = 'toast show ' + type;
   setTimeout(() => t.className = 'toast', 3000);
+}
+
+// ==================== EDIT SNAPSHOT ====================
+let editingSnapId = null;
+
+function openEditModal(id) {
+  const snap = snapshots.find(s => s.id === id);
+  if (!snap) return;
+  editingSnapId = id;
+
+  el('edit-snap-date').value = snap.date;
+  const wrap = el('edit-snap-rows');
+  wrap.innerHTML = '';
+  snap.assets.forEach(a => addEditRow(a.name, a.type, a.value, a.invested));
+
+  el('edit-modal').style.display = 'flex';
+}
+
+function closeEditModal() {
+  el('edit-modal').style.display = 'none';
+  editingSnapId = null;
+}
+
+function addEditRow(name='', type='ETF (akcje)', value='', invested='') {
+  const wrap = el('edit-snap-rows');
+  const idx = wrap.children.length;
+  const div = document.createElement('div');
+  div.className = 'form-grid';
+  div.innerHTML = `
+    <div class="form-group">
+      ${idx===0?'<label>Nazwa</label>':''}
+      <input type="text" placeholder="np. IKE – WEBN" value="${name}">
+    </div>
+    <div class="form-group">
+      ${idx===0?'<label>Typ</label>':''}
+      <select>${ASSET_TYPES.map(t=>`<option${t===type?' selected':''}>${t}</option>`).join('')}</select>
+    </div>
+    <div class="form-group">
+      ${idx===0?'<label>Wartość (zł)</label>':''}
+      <input type="number" placeholder="0" value="${value}" min="0">
+    </div>
+    <div class="form-group">
+      ${idx===0?'<label>Łącznie wpłacono (zł)</label>':''}
+      <input type="number" placeholder="0" value="${invested}" min="0">
+    </div>
+    <button class="btn btn-ghost" style="height:38px;margin-top:${idx===0?'22px':'0'}" onclick="this.parentElement.remove()">✕</button>
+  `;
+  wrap.appendChild(div);
+}
+
+async function saveEditSnapshot() {
+  if (!editingSnapId) return;
+  const date = el('edit-snap-date').value;
+  if (!date) return toast('Wybierz datę', 'error');
+
+  const rows = document.querySelectorAll('#edit-snap-rows .form-grid');
+  const assets = [];
+  let valid = true;
+  rows.forEach(row => {
+    const name = row.querySelector('input[type=text]').value.trim();
+    const type = row.querySelector('select').value;
+    const inputs = row.querySelectorAll('input[type=number]');
+    if (!name) { valid = false; return; }
+    assets.push({ name, type, value: parseFloat(inputs[0].value)||0, invested: parseFloat(inputs[1].value)||0 });
+  });
+
+  if (!valid) return toast('Wypełnij wszystkie nazwy', 'error');
+
+  const btn = el('edit-save-btn');
+  btn.disabled = true;
+  try {
+    await api('PUT', `/api/snapshots/${editingSnapId}`, { date, assets });
+    snapshots = await api('GET', '/api/snapshots');
+    render();
+    closeEditModal();
+    toast('✓ Snapshot zaktualizowany', 'success');
+  } catch(e) {
+    toast('Błąd: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 init();
