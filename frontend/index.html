@@ -152,6 +152,7 @@
   .history-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text2); font-size: 12px; vertical-align: middle; }
   .history-table tr:last-child td { border-bottom: none; }
   .history-table tr:hover td { background: var(--surface2); }
+  .history-table tfoot td { color: var(--text2); padding: 12px; }
   .del-btn { background: none; border: none; color: var(--text3); cursor: pointer; font-size: 14px; padding: 0 4px; transition: color 0.2s; }
   .del-btn:hover { color: var(--negative); }
   .edit-btn { background: none; border: none; color: var(--text3); cursor: pointer; font-size: 14px; padding: 0 4px; transition: color 0.2s; }
@@ -232,7 +233,7 @@
       <input type="text" id="setup-username" autocomplete="username" onkeydown="if(event.key==='Enter')doSetup()">
     </div>
     <div class="auth-field">
-      <label>Hasło</label>
+      <label>Hasło</l/wynikiabel>
       <input type="password" id="setup-password" onkeydown="if(event.key==='Enter')doSetup()">
     </div>
     <div class="auth-field">
@@ -318,6 +319,10 @@
         <div class="chart-wrap"><canvas id="donut-chart"></canvas></div>
       </div>
     </div>
+    <div class="card grid-full">
+      <div class="card-title">Wyniki per aktywo</div>
+      <div id="asset-breakdown-wrap"><div class="empty">Brak danych</div></div>
+  </div>
     <div class="card grid-full">
       <div class="card-title">Historia wartości</div>
       <div class="tabs">
@@ -677,6 +682,50 @@ function renderStats() {
     const months = Math.round((new Date(last.date) - new Date(snapshots[0].date)) / (1000*60*60*24*30));
     el('stat-period').textContent = `${months} mies. śledzenia`;
   }
+  renderAssetTable(last);
+}
+
+function renderAssetTable(snap) {
+  const rows = snap.assets
+    .map(a => ({ ...a, gain: a.value - a.invested, gainPct: a.invested > 0 ? (a.value - a.invested) / a.invested * 100 : null }))
+    .sort((a, b) => b.value - a.value);
+
+  const totalValue = rows.reduce((s, a) => s + a.value, 0);
+  const totalInvest = rows.reduce((s, a) => s + a.invested, 0);
+  const totalGain = totalValue - totalInvest;
+  const totalGainPct = totalInvest > 0 ? (totalGain / totalInvest * 100) : null;
+
+  const html = `
+    <table class="history-table">
+      <thead><tr>
+        <th>Aktywo</th>
+        <th>Typ</th>
+        <th style="text-align:right">Wartość</th>
+        <th style="text-align:right">Wpłacono</th>
+        <th style="text-align:right">Zysk / Strata</th>
+        <th style="text-align:right">Zwrot</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(a => `<tr>
+          <td style="color:var(--text)">${a.name}</td>
+          <td>${a.type}</td>
+          <td style="text-align:right;color:var(--accent)">${fmt(a.value)}</td>
+          <td style="text-align:right">${a.invested > 0 ? fmt(a.invested) : '—'}</td>
+          <td style="text-align:right" class="${a.gain >= 0 ? 'positive' : 'negative'}">${a.invested > 0 ? (a.gain >= 0 ? '+' : '') + fmt(a.gain) : '—'}</td>
+          <td style="text-align:right" class="${a.gainPct !== null && a.gainPct >= 0 ? 'positive' : 'negative'}">${a.gainPct !== null ? (a.gainPct >= 0 ? '+' : '') + a.gainPct.toFixed(1) + '%' : '—'}</td>
+        </tr>`).join('')}
+      </tbody>
+      <tfoot>
+        <tr style="border-top: 1px solid var(--border)">
+          <td style="color:var(--text);font-weight:500" colspan="2">Łącznie</td>
+          <td style="text-align:right;color:var(--accent);font-weight:500">${fmt(totalValue)}</td>
+          <td style="text-align:right;color:var(--text);font-weight:500">${fmt(totalInvest)}</td>
+          <td style="text-align:right;font-weight:500" class="${totalGain >= 0 ? 'positive' : 'negative'}">${(totalGain >= 0 ? '+' : '') + fmt(totalGain)}</td>
+          <td style="text-align:right;font-weight:500" class="${totalGainPct !== null && totalGainPct >= 0 ? 'positive' : 'negative'}">${totalGainPct !== null ? (totalGainPct >= 0 ? '+' : '') + totalGainPct.toFixed(1) + '%' : '—'}</td>
+        </tr>
+      </tfoot>
+    </table>`;
+  el('asset-breakdown-wrap').innerHTML = html;
 }
 
 function renderAllocation() {
