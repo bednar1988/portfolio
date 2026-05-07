@@ -94,6 +94,7 @@
 
   .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
   .grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .grid-4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; margin-bottom: 16px; }
   .grid-full { margin-bottom: 16px; }
 
   .card {
@@ -212,7 +213,7 @@
   .divider { border: none; border-top: 1px solid var(--border); margin: 28px 0; }
 
   @media (max-width: 768px) {
-    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
     .form-grid { grid-template-columns: 1fr 1fr; }
     .form-grid .btn { grid-column: 1/-1; }
     header { flex-direction: column; align-items: flex-start; gap: 12px; }
@@ -271,8 +272,6 @@
       <p id="last-updated">Ładowanie...</p>
     </div>
     <div class="header-right">
-      <div class="total-label">Wartość łączna</div>
-      <div class="total-value" id="total-display">—</div>
       <div class="header-user">
         <span id="header-username"></span>
         <span class="admin-badge" id="header-admin-badge" style="display:none">ADMIN</span>
@@ -292,11 +291,16 @@
 
   <!-- OVERVIEW -->
   <div id="page-overview" class="page active">
-    <div class="grid-3">
+    <div class="grid-4">
       <div class="card">
         <div class="card-title">Zainwestowane</div>
         <div class="stat-value" id="stat-invested">—</div>
         <div class="stat-sub">Suma wszystkich wpłat</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Obecna wartość</div>
+        <div class="stat-value" id="total-display">—</div>
+        <div class="stat-sub">Obecna wartość wszystkich inwestycji</div>
       </div>
       <div class="card">
         <div class="card-title">Zysk / Strata</div>
@@ -674,6 +678,7 @@ function renderStats() {
   const tv = totalVal(last), ti = totalInvested(last);
   const gain = tv - ti, gainPct = ti > 0 ? (gain/ti*100) : 0;
   el('stat-invested').textContent = fmt(ti);
+  el('total-display').textContent = fmt(tv);
   el('stat-gain').textContent = (gain>=0?'+':'') + fmt(gain);
   el('stat-gain').className = 'stat-value ' + (gain>=0?'positive':'negative');
   el('stat-gain-pct').textContent = `vs. wpłacone: ${gain>=0?'+':''}${gainPct.toFixed(1)}%`;
