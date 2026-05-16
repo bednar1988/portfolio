@@ -9,6 +9,7 @@ from datetime import datetime
 from pathlib import Path
 import bcrypt
 from jose import JWTError, jwt
+import secrets
 
 app = FastAPI(title="Portfolio Dashboard")
 
@@ -21,7 +22,7 @@ app.add_middleware(
 )
 
 DB_PATH = os.getenv("DB_PATH", "/data/portfolio.db")
-SECRET_KEY = os.getenv("SECRET_KEY", "change-this-to-a-random-secret-min-32-chars")
+SECRET_KEY = secrets.token_hex(32)
 ALGORITHM = "HS256"
 COOKIE_NAME = "portfolio_session"
 
