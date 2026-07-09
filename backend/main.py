@@ -35,9 +35,44 @@ def get_db():
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
+def _diff_invested_series(entries):
+    """entries: iterable of (ref, date, name, invested) in chronological order.
+    Yields (ref, date, name, delta) for each non-zero change in invested per asset name."""
+    last = {}
+    for ref, date, name, invested in entries:
+        invested = invested or 0.0
+        prev = last.get(name, 0.0)
+        delta = invested - prev
+        if abs(delta) > 0.005:
+            yield ref, date, name, delta
+        last[name] = invested
+
+def _migrate_cashflows_from_invested(conn):
+    users = conn.execute("SELECT id FROM users").fetchall()
+    for u in users:
+        snaps = conn.execute(
+            "SELECT id, date FROM snapshots WHERE user_id = ? ORDER BY date ASC, id ASC", (u["id"],)
+        ).fetchall()
+        entries = []
+        for snap in snaps:
+            assets = conn.execute(
+                "SELECT name, invested FROM assets WHERE snapshot_id = ?", (snap["id"],)
+            ).fetchall()
+            for a in assets:
+                entries.append((snap["id"], snap["date"], a["name"], a["invested"]))
+        for snap_id, date, name, delta in _diff_invested_series(entries):
+            conn.execute(
+                "INSERT INTO cashflows (user_id, snapshot_id, asset_name, date, amount, note, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (u["id"], snap_id, name, date, delta, "Migracja z poprzedniego modelu", datetime.now().isoformat())
+            )
+
 def init_db():
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     conn = get_db()
+    cashflows_table_existed = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='cashflows'"
+    ).fetchone() is not None
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -72,7 +107,22 @@ def init_db():
             type TEXT NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
+
+        CREATE TABLE IF NOT EXISTS cashflows (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            snapshot_id INTEGER,
+            asset_name TEXT NOT NULL,
+            date TEXT NOT NULL,
+            amount REAL NOT NULL,
+            note TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            FOREIGN KEY (snapshot_id) REFERENCES snapshots(id) ON DELETE CASCADE
+        );
     """)
+    if not cashflows_table_existed:
+        _migrate_cashflows_from_invested(conn)
     conn.commit()
     conn.close()
 
@@ -111,7 +161,7 @@ class AssetIn(BaseModel):
     name: str
     type: str
     value: float
-    invested: float = 0.0
+    flow: float = 0.0
 
 class SnapshotIn(BaseModel):
     date: str
@@ -120,6 +170,12 @@ class SnapshotIn(BaseModel):
 class AssetDefIn(BaseModel):
     name: str
     type: str
+
+class CashflowIn(BaseModel):
+    asset_name: str
+    date: str
+    amount: float
+    note: Optional[str] = None
 
 class AuthIn(BaseModel):
     username: str
@@ -249,6 +305,7 @@ def delete_user(user_id: int, user=Depends(require_admin)):
         conn.close()
         raise HTTPException(status_code=404, detail="User not found")
     conn.execute("DELETE FROM asset_definitions WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM cashflows WHERE user_id = ?", (user_id,))
     conn.execute(
         "DELETE FROM assets WHERE snapshot_id IN (SELECT id FROM snapshots WHERE user_id = ?)",
         (user_id,)
@@ -309,6 +366,19 @@ def get_snapshots(user=Depends(get_current_user)):
     conn.close()
     return result
 
+def _insert_snapshot_assets(conn, user_id, snap_id, date, assets):
+    for asset in assets:
+        conn.execute(
+            "INSERT INTO assets (snapshot_id, name, type, value) VALUES (?, ?, ?, ?)",
+            (snap_id, asset.name, asset.type, asset.value)
+        )
+        if abs(asset.flow) > 0.005:
+            conn.execute(
+                "INSERT INTO cashflows (user_id, snapshot_id, asset_name, date, amount, note, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (user_id, snap_id, asset.name, date, asset.flow, None, datetime.now().isoformat())
+            )
+
 @app.post("/api/snapshots", status_code=201)
 def create_snapshot(data: SnapshotIn, user=Depends(get_current_user)):
     conn = get_db()
@@ -317,11 +387,7 @@ def create_snapshot(data: SnapshotIn, user=Depends(get_current_user)):
         (user["id"], data.date, datetime.now().isoformat())
     )
     snap_id = cur.lastrowid
-    for asset in data.assets:
-        conn.execute(
-            "INSERT INTO assets (snapshot_id, name, type, value, invested) VALUES (?, ?, ?, ?, ?)",
-            (snap_id, asset.name, asset.type, asset.value, asset.invested)
-        )
+    _insert_snapshot_assets(conn, user["id"], snap_id, data.date, data.assets)
     conn.commit()
     conn.close()
     return {"id": snap_id, "date": data.date}
@@ -337,11 +403,8 @@ def update_snapshot(snap_id: int, data: SnapshotIn, user=Depends(get_current_use
         raise HTTPException(status_code=404, detail="Snapshot not found")
     conn.execute("UPDATE snapshots SET date = ? WHERE id = ?", (data.date, snap_id))
     conn.execute("DELETE FROM assets WHERE snapshot_id = ?", (snap_id,))
-    for asset in data.assets:
-        conn.execute(
-            "INSERT INTO assets (snapshot_id, name, type, value, invested) VALUES (?, ?, ?, ?, ?)",
-            (snap_id, asset.name, asset.type, asset.value, asset.invested)
-        )
+    conn.execute("DELETE FROM cashflows WHERE snapshot_id = ?", (snap_id,))
+    _insert_snapshot_assets(conn, user["id"], snap_id, data.date, data.assets)
     conn.commit()
     conn.close()
     return {"id": snap_id, "date": data.date}
@@ -356,10 +419,62 @@ def delete_snapshot(snap_id: int, user=Depends(get_current_user)):
         conn.close()
         raise HTTPException(status_code=404, detail="Snapshot not found")
     conn.execute("DELETE FROM assets WHERE snapshot_id = ?", (snap_id,))
+    conn.execute("DELETE FROM cashflows WHERE snapshot_id = ?", (snap_id,))
     conn.execute("DELETE FROM snapshots WHERE id = ?", (snap_id,))
     conn.commit()
     conn.close()
     return {"deleted": snap_id}
+
+# ==================== CASHFLOWS ====================
+
+@app.get("/api/cashflows")
+def get_cashflows(user=Depends(get_current_user)):
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT * FROM cashflows WHERE user_id = ? ORDER BY date ASC, id ASC", (user["id"],)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+@app.post("/api/cashflows", status_code=201)
+def create_cashflow(data: CashflowIn, user=Depends(get_current_user)):
+    conn = get_db()
+    cur = conn.execute(
+        "INSERT INTO cashflows (user_id, snapshot_id, asset_name, date, amount, note, created_at) "
+        "VALUES (?, NULL, ?, ?, ?, ?, ?)",
+        (user["id"], data.asset_name, data.date, data.amount, data.note, datetime.now().isoformat())
+    )
+    conn.commit()
+    cf_id = cur.lastrowid
+    conn.close()
+    return {"id": cf_id}
+
+@app.put("/api/cashflows/{cf_id}")
+def update_cashflow(cf_id: int, data: CashflowIn, user=Depends(get_current_user)):
+    conn = get_db()
+    row = conn.execute("SELECT id FROM cashflows WHERE id = ? AND user_id = ?", (cf_id, user["id"])).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Cashflow not found")
+    conn.execute(
+        "UPDATE cashflows SET asset_name = ?, date = ?, amount = ?, note = ? WHERE id = ?",
+        (data.asset_name, data.date, data.amount, data.note, cf_id)
+    )
+    conn.commit()
+    conn.close()
+    return {"id": cf_id}
+
+@app.delete("/api/cashflows/{cf_id}")
+def delete_cashflow(cf_id: int, user=Depends(get_current_user)):
+    conn = get_db()
+    row = conn.execute("SELECT id FROM cashflows WHERE id = ? AND user_id = ?", (cf_id, user["id"])).fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Cashflow not found")
+    conn.execute("DELETE FROM cashflows WHERE id = ?", (cf_id,))
+    conn.commit()
+    conn.close()
+    return {"deleted": cf_id}
 
 # ==================== ASSET DEFINITIONS ====================
 
@@ -406,9 +521,12 @@ def export_data(user=Depends(get_current_user)):
     result = []
     for snap in snapshots:
         assets = conn.execute(
-            "SELECT name, type, value, invested FROM assets WHERE snapshot_id = ?", (snap["id"],)
+            "SELECT name, type, value FROM assets WHERE snapshot_id = ?", (snap["id"],)
         ).fetchall()
         result.append({"date": snap["date"], "assets": [dict(a) for a in assets]})
+    cashflows = conn.execute(
+        "SELECT asset_name, date, amount, note FROM cashflows WHERE user_id = ? ORDER BY date ASC", (user["id"],)
+    ).fetchall()
     defs = conn.execute(
         "SELECT name, type FROM asset_definitions WHERE user_id = ?", (user["id"],)
     ).fetchall()
@@ -416,28 +534,58 @@ def export_data(user=Depends(get_current_user)):
     return {
         "exported_at": datetime.now().isoformat(),
         "snapshots": result,
+        "cashflows": [dict(c) for c in cashflows],
         "asset_definitions": [dict(d) for d in defs]
     }
 
 @app.post("/api/import")
 def import_data(data: dict, user=Depends(get_current_user)):
     conn = get_db()
+    conn.execute("DELETE FROM cashflows WHERE user_id = ?", (user["id"],))
     conn.execute(
         "DELETE FROM assets WHERE snapshot_id IN (SELECT id FROM snapshots WHERE user_id = ?)",
         (user["id"],)
     )
     conn.execute("DELETE FROM snapshots WHERE user_id = ?", (user["id"],))
     conn.execute("DELETE FROM asset_definitions WHERE user_id = ?", (user["id"],))
-    for snap in data.get("snapshots", []):
+
+    snaps_in = data.get("snapshots", [])
+    snap_id_by_date = {}
+    for snap in snaps_in:
         cur = conn.execute(
             "INSERT INTO snapshots (user_id, date, created_at) VALUES (?, ?, ?)",
             (user["id"], snap["date"], datetime.now().isoformat())
         )
+        snap_id_by_date[snap["date"]] = cur.lastrowid
         for asset in snap.get("assets", []):
             conn.execute(
-                "INSERT INTO assets (snapshot_id, name, type, value, invested) VALUES (?, ?, ?, ?, ?)",
-                (cur.lastrowid, asset["name"], asset["type"], asset["value"], asset.get("invested", 0))
+                "INSERT INTO assets (snapshot_id, name, type, value) VALUES (?, ?, ?, ?)",
+                (cur.lastrowid, asset["name"], asset["type"], asset["value"])
             )
+
+    if "cashflows" in data:
+        for cf in data["cashflows"]:
+            conn.execute(
+                "INSERT INTO cashflows (user_id, snapshot_id, asset_name, date, amount, note, created_at) "
+                "VALUES (?, NULL, ?, ?, ?, ?, ?)",
+                (user["id"], cf["asset_name"], cf["date"], cf["amount"], cf.get("note"), datetime.now().isoformat())
+            )
+    else:
+        # Legacy backup from before the cashflow log existed: synthesize entries
+        # from the deltas of each asset's old cumulative "invested" field.
+        entries = []
+        for snap in snaps_in:
+            snap_id = snap_id_by_date.get(snap["date"])
+            for asset in snap.get("assets", []):
+                if "invested" in asset:
+                    entries.append((snap_id, snap["date"], asset["name"], asset["invested"]))
+        for snap_id, date, name, delta in _diff_invested_series(entries):
+            conn.execute(
+                "INSERT INTO cashflows (user_id, snapshot_id, asset_name, date, amount, note, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (user["id"], snap_id, name, date, delta, "Migracja ze starego backupu", datetime.now().isoformat())
+            )
+
     for d in data.get("asset_definitions", []):
         conn.execute(
             "INSERT INTO asset_definitions (user_id, name, type) VALUES (?, ?, ?)",
@@ -445,8 +593,8 @@ def import_data(data: dict, user=Depends(get_current_user)):
         )
     conn.commit()
     conn.close()
-    return {"imported": len(data.get("snapshots", []))}
+    return {"imported": len(snaps_in)}
 
 # ==================== STATIC FRONTEND ====================
 
-app.mount("/", StaticFiles(directory="/frontend", html=True), name="frontend")
+app.mount("/", StaticFiles(directory=os.getenv("FRONTEND_DIR", "/frontend"), html=True), name="frontend")

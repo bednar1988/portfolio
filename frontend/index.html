@@ -316,7 +316,7 @@
       <div class="card">
         <div class="card-title">Zainwestowane</div>
         <div class="stat-value" id="stat-invested">—</div>
-        <div class="stat-sub">Suma wszystkich wpłat</div>
+        <div class="stat-sub">Wpłaty pomniejszone o wypłaty</div>
       </div>
       <div class="card">
         <div class="card-title">Obecna wartość</div>
@@ -378,8 +378,24 @@
   <!-- HISTORY -->
   <div id="page-history" class="page">
     <div class="card">
-      <div class="card-title">Wszystkie snapshoty</div>
-      <div id="history-table-wrap"><div class="loading"><div class="spinner"></div>Ładowanie...</div></div>
+      <div class="tabs">
+        <button class="tab active" onclick="setHistoryPageView('snapshots',this)">Snapshoty</button>
+        <button class="tab" onclick="setHistoryPageView('cashflows',this)">Wpłaty / Wypłaty</button>
+      </div>
+      <div id="history-view-snapshots">
+        <div id="history-table-wrap"><div class="loading"><div class="spinner"></div>Ładowanie...</div></div>
+      </div>
+      <div id="history-view-cashflows" style="display:none">
+        <div class="form-grid" style="grid-template-columns:1fr 1.4fr 1fr 1fr auto">
+          <div class="form-group"><label>Data</label><input type="date" id="cf-date"></div>
+          <div class="form-group"><label>Aktywo</label><input type="text" id="cf-asset" list="cf-asset-list" placeholder="np. IKE – WEBN"></div>
+          <div class="form-group"><label>Typ</label><select id="cf-type"><option value="1">Wpłata</option><option value="-1">Wypłata</option></select></div>
+          <div class="form-group"><label>Kwota (zł)</label><input type="number" id="cf-amount" min="0" placeholder="0"></div>
+          <button class="btn" id="cf-save-btn" style="height:38px;margin-top:22px" onclick="saveCashflow()">+ Dodaj</button>
+        </div>
+        <datalist id="cf-asset-list"></datalist>
+        <div id="cashflow-table-wrap" style="margin-top:20px"><div class="empty">Brak wpłat i wypłat</div></div>
+      </div>
     </div>
   </div>
 
@@ -536,7 +552,7 @@ const API = '';
 const COLORS = ['#00ff9f','#00e5ff','#bf00ff','#ff2d6b','#ffea00','#ff6b00','#00ff41','#ff00aa'];
 const ASSET_TYPES = ['ETF (akcje)','Obligacje','Lokata','Gotówka','Inne'];
 
-let snapshots = [], assetDefs = [];
+let snapshots = [], assetDefs = [], cashflows = [];
 let currentUser = null;
 let donutChart = null, histChart = null, projChart = null;
 let histView = 'total';
@@ -635,7 +651,7 @@ async function doLogin() {
 async function doLogout() {
   await api('POST', '/auth/logout').catch(() => {});
   currentUser = null;
-  snapshots = []; assetDefs = [];
+  snapshots = []; assetDefs = []; cashflows = [];
   expandedAssetNames.clear(); expandedSnapIds.clear(); totalRowExpanded = false;
   Object.values(assetSparkCharts).forEach(c => c && c.destroy()); assetSparkCharts = {};
   if (totalSparkChart) { totalSparkChart.destroy(); totalSparkChart = null; }
@@ -667,20 +683,23 @@ async function changePassword() {
 
 // ==================== INIT ====================
 async function init() {
-  [snapshots, assetDefs] = await Promise.all([
+  [snapshots, assetDefs, cashflows] = await Promise.all([
     api('GET', '/api/snapshots'),
-    api('GET', '/api/asset-definitions')
+    api('GET', '/api/asset-definitions'),
+    api('GET', '/api/cashflows')
   ]);
   render();
   initSnapshotForm();
   initDefRows();
   initProjectionDeposit();
+  resetCashflowForm();
 }
 
 function initProjectionDeposit() {
   if (snapshots.length >= 2) {
-    const delta = totalVal(snapshots[snapshots.length-1]) - totalVal(snapshots[snapshots.length-2]);
-    if (delta > 0) el('proj-deposit').value = Math.round(delta / 1000) * 1000;
+    const prev = snapshots[snapshots.length-2], last = snapshots[snapshots.length-1];
+    const periodFlow = cashflows.filter(c => c.date > prev.date && c.date <= last.date).reduce((s,c)=>s+c.amount,0);
+    if (periodFlow > 0) el('proj-deposit').value = Math.round(periodFlow / 1000) * 1000;
   }
   updateProjection();
 }
@@ -729,12 +748,15 @@ function renderAssetTable(snap) {
   if (totalSparkChart) { totalSparkChart.destroy(); totalSparkChart = null; }
 
   const rows = snap.assets
-    .map(a => ({ ...a, gain: a.value - a.invested, gainPct: a.invested > 0 ? (a.value - a.invested) / a.invested * 100 : null }))
+    .map(a => {
+      const invested = netInvestedForAsset(a.name, snap.date);
+      return { ...a, invested, gain: a.value - invested, gainPct: invested > 0 ? (a.value - invested) / invested * 100 : null };
+    })
     .sort((a, b) => b.value - a.value);
   window._assetRows = rows;
 
   const totalValue = rows.reduce((s, a) => s + a.value, 0);
-  const totalInvest = rows.reduce((s, a) => s + a.invested, 0);
+  const totalInvest = totalInvested(snap);
   const totalGain = totalValue - totalInvest;
   const totalGainPct = totalInvest > 0 ? (totalGain / totalInvest * 100) : null;
 
@@ -800,7 +822,7 @@ function getAssetHistory(name) {
   return snapshots
     .map(s => {
       const a = s.assets.find(x => x.name === name);
-      return a ? { date: s.date, value: a.value, invested: a.invested } : null;
+      return a ? { date: s.date, value: a.value, invested: netInvestedForAsset(name, s.date) } : null;
     })
     .filter(Boolean);
 }
@@ -913,9 +935,20 @@ function renderAllocation() {
 
 function setHistView(v, btn) {
   histView = v;
-  document.querySelectorAll('.tabs .tab').forEach(t => t.classList.remove('active'));
+  btn.parentElement.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   btn.classList.add('active');
   renderHistoryChart();
+}
+
+let historyPageView = 'snapshots', editingCashflowId = null;
+
+function setHistoryPageView(v, btn) {
+  historyPageView = v;
+  btn.parentElement.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  el('history-view-snapshots').style.display = v === 'snapshots' ? '' : 'none';
+  el('history-view-cashflows').style.display = v === 'cashflows' ? '' : 'none';
+  if (v === 'cashflows') renderCashflowTable();
 }
 
 function renderHistoryChart() {
@@ -966,8 +999,8 @@ function renderHistoryTable() {
     <tr class="snap-detail-row" id="snap-detail-${snap.id}" style="display:${isOpen?'table-row':'none'}">
       <td colspan="6">
         <table class="mini-history-table">
-          <thead><tr><th>Aktywo</th><th>Typ</th><th style="text-align:right">Wartość</th><th style="text-align:right">Wpłacono</th></tr></thead>
-          <tbody>${snap.assets.map(a=>`<tr><td style="color:var(--text)">${a.name}</td><td>${a.type}</td><td style="text-align:right;color:var(--accent)">${fmt(a.value)}</td><td style="text-align:right">${a.invested>0?fmt(a.invested):'—'}</td></tr>`).join('')}</tbody>
+          <thead><tr><th>Aktywo</th><th>Typ</th><th style="text-align:right">Wartość</th><th style="text-align:right">Wpłata / wypłata</th></tr></thead>
+          <tbody>${snap.assets.map(a=>{ const flow = flowForSnapshotAsset(snap.id, a.name); return `<tr><td style="color:var(--text)">${a.name}</td><td>${a.type}</td><td style="text-align:right;color:var(--accent)">${fmt(a.value)}</td><td style="text-align:right" class="${flow===0?'':flow>0?'positive':'negative'}">${flow===0?'—':(flow>0?'+':'')+fmt(flow)}</td></tr>`; }).join('')}</tbody>
         </table>
       </td>
     </tr>`;
@@ -987,15 +1020,10 @@ function toggleSnapDetail(id) {
 function initSnapshotForm() {
   el('snap-date').value = new Date().toISOString().split('T')[0];
   el('snapshot-rows').innerHTML = '';
-  const lastLookup = {};
-  if (snapshots.length) snapshots[snapshots.length-1].assets.forEach(a => { lastLookup[a.name] = a; });
-  assetDefs.forEach(d => {
-    const prev = lastLookup[d.name];
-    addSnapRow(d.name, d.type, '', prev ? prev.invested : '');
-  });
+  assetDefs.forEach(d => addSnapRow(d.name, d.type, '', ''));
 }
 
-function addSnapRow(name='', type='ETF (akcje)', value='', invested='') {
+function addSnapRow(name='', type='ETF (akcje)', value='', flow='') {
   const wrap = el('snapshot-rows');
   const idx = wrap.children.length;
   const div = document.createElement('div');
@@ -1004,7 +1032,7 @@ function addSnapRow(name='', type='ETF (akcje)', value='', invested='') {
     <div class="form-group">${idx===0?'<label>Nazwa</label>':''}<input type="text" placeholder="np. IKE – WEBN" value="${name}"></div>
     <div class="form-group">${idx===0?'<label>Typ</label>':''}<select>${ASSET_TYPES.map(t=>`<option${t===type?' selected':''}>${t}</option>`).join('')}</select></div>
     <div class="form-group">${idx===0?'<label>Wartość (zł)</label>':''}<input type="number" placeholder="0" value="${value}" min="0"></div>
-    <div class="form-group">${idx===0?'<label>Łącznie wpłacono (zł)</label>':''}<input type="number" placeholder="0" value="${invested}" min="0"></div>
+    <div class="form-group">${idx===0?'<label>Wpłata / wypłata (zł)</label>':''}<input type="number" placeholder="0" value="${flow}" title="Zmiana wpłat od poprzedniego snapshotu. Dopłaciłeś? Wpisz dodatnią kwotę. Wypłaciłeś? Wpisz ujemną."></div>
     <button class="btn btn-ghost" style="height:38px;margin-top:${idx===0?'22px':'0'}" onclick="this.parentElement.remove()">${ICON_X}</button>`;
   wrap.appendChild(div);
 }
@@ -1020,13 +1048,13 @@ async function saveSnapshot() {
     const type = row.querySelector('select').value;
     const nums = row.querySelectorAll('input[type=number]');
     if (!name) { valid = false; return; }
-    assets.push({ name, type, value: parseFloat(nums[0].value)||0, invested: parseFloat(nums[1].value)||0 });
+    assets.push({ name, type, value: parseFloat(nums[0].value)||0, flow: parseFloat(nums[1].value)||0 });
   });
   if (!valid) return toast('Wypełnij wszystkie nazwy', 'error');
   const btn = el('save-btn'); btn.disabled = true;
   try {
     await api('POST', '/api/snapshots', { date, assets });
-    snapshots = await api('GET', '/api/snapshots');
+    [snapshots, cashflows] = await Promise.all([api('GET', '/api/snapshots'), api('GET', '/api/cashflows')]);
     render(); initSnapshotForm();
     toast('✓ Snapshot zapisany!', 'success');
     showPage('overview', document.querySelector('.nav-tab'));
@@ -1038,7 +1066,7 @@ async function deleteSnapshot(id) {
   if (!confirm('Usunąć ten snapshot?')) return;
   try {
     await api('DELETE', `/api/snapshots/${id}`);
-    snapshots = await api('GET', '/api/snapshots');
+    [snapshots, cashflows] = await Promise.all([api('GET', '/api/snapshots'), api('GET', '/api/cashflows')]);
     render(); toast('Snapshot usunięty', 'success');
   } catch(e) { toast('Błąd: ' + e.message, 'error'); }
 }
@@ -1050,12 +1078,12 @@ function openEditModal(id) {
   editingSnapId = id;
   el('edit-snap-date').value = snap.date;
   el('edit-snap-rows').innerHTML = '';
-  snap.assets.forEach(a => addEditRow(a.name, a.type, a.value, a.invested));
+  snap.assets.forEach(a => addEditRow(a.name, a.type, a.value, flowForSnapshotAsset(snap.id, a.name)));
   el('edit-modal').style.display = 'flex';
 }
 function closeEditModal() { el('edit-modal').style.display = 'none'; editingSnapId = null; }
 
-function addEditRow(name='', type='ETF (akcje)', value='', invested='') {
+function addEditRow(name='', type='ETF (akcje)', value='', flow='') {
   const wrap = el('edit-snap-rows');
   const idx = wrap.children.length;
   const div = document.createElement('div');
@@ -1064,7 +1092,7 @@ function addEditRow(name='', type='ETF (akcje)', value='', invested='') {
     <div class="form-group">${idx===0?'<label>Nazwa</label>':''}<input type="text" placeholder="np. IKE – WEBN" value="${name}"></div>
     <div class="form-group">${idx===0?'<label>Typ</label>':''}<select>${ASSET_TYPES.map(t=>`<option${t===type?' selected':''}>${t}</option>`).join('')}</select></div>
     <div class="form-group">${idx===0?'<label>Wartość (zł)</label>':''}<input type="number" placeholder="0" value="${value}" min="0"></div>
-    <div class="form-group">${idx===0?'<label>Łącznie wpłacono (zł)</label>':''}<input type="number" placeholder="0" value="${invested}" min="0"></div>
+    <div class="form-group">${idx===0?'<label>Wpłata / wypłata (zł)</label>':''}<input type="number" placeholder="0" value="${flow}" title="Zmiana wpłat od poprzedniego snapshotu. Dopłaciłeś? Wpisz dodatnią kwotę. Wypłaciłeś? Wpisz ujemną."></div>
     <button class="btn btn-ghost" style="height:38px;margin-top:${idx===0?'22px':'0'}" onclick="this.parentElement.remove()">${ICON_X}</button>`;
   wrap.appendChild(div);
 }
@@ -1080,17 +1108,81 @@ async function saveEditSnapshot() {
     const type = row.querySelector('select').value;
     const nums = row.querySelectorAll('input[type=number]');
     if (!name) { valid = false; return; }
-    assets.push({ name, type, value: parseFloat(nums[0].value)||0, invested: parseFloat(nums[1].value)||0 });
+    assets.push({ name, type, value: parseFloat(nums[0].value)||0, flow: parseFloat(nums[1].value)||0 });
   });
   if (!valid) return toast('Wypełnij wszystkie nazwy', 'error');
   const btn = el('edit-save-btn'); btn.disabled = true;
   try {
     await api('PUT', `/api/snapshots/${editingSnapId}`, { date, assets });
-    snapshots = await api('GET', '/api/snapshots');
+    [snapshots, cashflows] = await Promise.all([api('GET', '/api/snapshots'), api('GET', '/api/cashflows')]);
     render(); closeEditModal();
     toast('✓ Snapshot zaktualizowany', 'success');
   } catch(e) { toast('Błąd: ' + e.message, 'error'); }
   finally { btn.disabled = false; }
+}
+
+// ==================== CASHFLOWS ====================
+function renderCashflowTable() {
+  el('cf-asset-list').innerHTML = assetDefs.map(d => `<option value="${d.name}">`).join('');
+  const wrap = el('cashflow-table-wrap');
+  if (!cashflows.length) { wrap.innerHTML = '<div class="empty">Brak wpłat i wypłat</div>'; return; }
+  const rows = [...cashflows].reverse().map(c => `<tr>
+    <td style="color:var(--text)">${c.date}${c.snapshot_id ? ' <span style="color:var(--text3);font-size:10px">(snapshot)</span>' : ''}</td>
+    <td>${c.asset_name}</td>
+    <td style="text-align:right" class="${c.amount>=0?'positive':'negative'}">${c.amount>=0?'+':''}${fmt(c.amount)}</td>
+    <td><button class="edit-btn" title="Edytuj" onclick="editCashflow(${c.id})">${ICON_EDIT}</button> <button class="del-btn" title="Usuń" onclick="deleteCashflow(${c.id})">${ICON_X}</button></td>
+  </tr>`).join('');
+  wrap.innerHTML = `<table class="history-table"><thead><tr><th>Data</th><th>Aktywo</th><th style="text-align:right">Kwota</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function resetCashflowForm() {
+  editingCashflowId = null;
+  el('cf-date').value = new Date().toISOString().split('T')[0];
+  el('cf-asset').value = '';
+  el('cf-type').value = '1';
+  el('cf-amount').value = '';
+  el('cf-save-btn').textContent = '+ Dodaj';
+}
+
+function editCashflow(id) {
+  const cf = cashflows.find(c => c.id === id);
+  if (!cf) return;
+  editingCashflowId = id;
+  el('cf-date').value = cf.date;
+  el('cf-asset').value = cf.asset_name;
+  el('cf-type').value = cf.amount >= 0 ? '1' : '-1';
+  el('cf-amount').value = Math.abs(cf.amount);
+  el('cf-save-btn').textContent = 'Zapisz zmiany';
+  el('cf-date').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+async function saveCashflow() {
+  const date = el('cf-date').value;
+  const asset_name = el('cf-asset').value.trim();
+  const sign = parseInt(el('cf-type').value, 10);
+  const amount = parseFloat(el('cf-amount').value) || 0;
+  if (!date || !asset_name || !amount) return toast('Wypełnij datę, aktywo i kwotę', 'error');
+  const payload = { asset_name, date, amount: sign * Math.abs(amount) };
+  const btn = el('cf-save-btn'); btn.disabled = true;
+  try {
+    if (editingCashflowId) await api('PUT', `/api/cashflows/${editingCashflowId}`, payload);
+    else await api('POST', '/api/cashflows', payload);
+    cashflows = await api('GET', '/api/cashflows');
+    resetCashflowForm();
+    render(); renderCashflowTable();
+    toast('✓ Zapisano', 'success');
+  } catch(e) { toast('Błąd: ' + e.message, 'error'); }
+  finally { btn.disabled = false; }
+}
+
+async function deleteCashflow(id) {
+  if (!confirm('Usunąć ten wpis?')) return;
+  try {
+    await api('DELETE', `/api/cashflows/${id}`);
+    cashflows = await api('GET', '/api/cashflows');
+    render(); renderCashflowTable();
+    toast('Wpis usunięty', 'success');
+  } catch(e) { toast('Błąd: ' + e.message, 'error'); }
 }
 
 // ==================== ASSET DEFINITIONS ====================
@@ -1190,8 +1282,11 @@ async function importData(input) {
   try {
     const data = JSON.parse(await file.text());
     await api('POST', '/api/import', data);
-    snapshots = await api('GET', '/api/snapshots');
-    assetDefs = await api('GET', '/api/asset-definitions');
+    [snapshots, assetDefs, cashflows] = await Promise.all([
+      api('GET', '/api/snapshots'),
+      api('GET', '/api/asset-definitions'),
+      api('GET', '/api/cashflows')
+    ]);
     render(); initDefRows();
     toast(`✓ Zaimportowano ${snapshots.length} snapshotów`, 'success');
   } catch(e) { toast('Błąd importu: ' + e.message, 'error'); }
@@ -1202,8 +1297,8 @@ async function clearAll() {
   if (!confirm('Usunąć WSZYSTKIE Twoje dane?')) return;
   if (!confirm('Na pewno? Zrób najpierw eksport.')) return;
   try {
-    await api('POST', '/api/import', { snapshots: [], asset_definitions: [] });
-    snapshots = []; render();
+    await api('POST', '/api/import', { snapshots: [], cashflows: [], asset_definitions: [] });
+    snapshots = []; cashflows = []; render();
     toast('Dane usunięte', 'success');
   } catch(e) { toast('Błąd: ' + e.message, 'error'); }
 }
@@ -1275,7 +1370,10 @@ async function doResetPassword() {
 
 // ==================== HELPERS ====================
 function totalVal(snap) { return snap.assets.reduce((s,a)=>s+a.value,0); }
-function totalInvested(snap) { return snap.assets.reduce((s,a)=>s+a.invested,0); }
+function totalInvested(snap) { return netInvestedAsOf(snap.date); }
+function netInvestedAsOf(date) { return cashflows.filter(c => c.date <= date).reduce((s,c)=>s+c.amount, 0); }
+function netInvestedForAsset(name, date) { return cashflows.filter(c => c.asset_name === name && c.date <= date).reduce((s,c)=>s+c.amount, 0); }
+function flowForSnapshotAsset(snapId, name) { return cashflows.filter(c => c.snapshot_id === snapId && c.asset_name === name).reduce((s,c)=>s+c.amount, 0); }
 function el(id) { return document.getElementById(id); }
 function fmt(n) {
   if (n===undefined||n===null||isNaN(n)) return '—';
