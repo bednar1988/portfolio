@@ -138,6 +138,7 @@
   }
   .form-group input:focus, .form-group select:focus { border-color: var(--accent); }
   .form-group select option { background: var(--surface2); }
+  .form-group input:read-only { opacity: 0.55; cursor: not-allowed; }
 
   .btn { padding: 10px 20px; background: var(--accent); color: #080a0e; border: none; border-radius: 8px; font-family: var(--font-mono); font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; transition: opacity 0.2s; letter-spacing: 0.05em; }
   .btn:hover { opacity: 0.85; }
@@ -1023,18 +1024,53 @@ function initSnapshotForm() {
   assetDefs.forEach(d => addSnapRow(d.name, d.type, '', ''));
 }
 
+// Gotówka nie generuje zysku — jej wartość to zawsze suma wpłat, więc pole
+// "wpłata/wypłata" liczymy automatycznie z różnicy wartości zamiast każdorazowo
+// wymagać ręcznego przeliczenia od użytkownika.
+function lastKnownValue(name, beforeDate) {
+  const list = beforeDate ? snapshots.filter(s => s.date < beforeDate) : snapshots;
+  for (let i = list.length - 1; i >= 0; i--) {
+    const a = list[i].assets.find(x => x.name === name);
+    if (a) return a.value;
+  }
+  return 0;
+}
+
+function round2(n) { return Math.round(n * 100) / 100; }
+
+function recomputeCashFlow(row) {
+  const name = row.querySelector('input[type=text]').value.trim();
+  const nums = row.querySelectorAll('input[type=number]');
+  const rawValue = nums[0].value;
+  if (rawValue === '') { nums[1].value = ''; return; }
+  const dateInputId = row.closest('#snapshot-rows') ? 'snap-date' : 'edit-snap-date';
+  const asOf = el(dateInputId) ? el(dateInputId).value : null;
+  nums[1].value = round2((parseFloat(rawValue) || 0) - lastKnownValue(name, asOf));
+}
+
+function onSnapRowChange(changedEl) {
+  const row = changedEl.closest('.form-grid');
+  const isCash = row.querySelector('select').value === 'Gotówka';
+  const flowInput = row.querySelectorAll('input[type=number]')[1];
+  flowInput.readOnly = isCash;
+  flowInput.title = isCash ? 'Gotówka nie generuje zysku — liczone automatycznie z różnicy wartości.' : 'Zmiana wpłat od poprzedniego snapshotu. Dopłaciłeś? Wpisz dodatnią kwotę. Wypłaciłeś? Wpisz ujemną.';
+  if (isCash) recomputeCashFlow(row);
+}
+
 function addSnapRow(name='', type='ETF (akcje)', value='', flow='') {
   const wrap = el('snapshot-rows');
   const idx = wrap.children.length;
   const div = document.createElement('div');
   div.className = 'form-grid';
+  const isCash = type === 'Gotówka';
   div.innerHTML = `
-    <div class="form-group">${idx===0?'<label>Nazwa</label>':''}<input type="text" placeholder="np. IKE – WEBN" value="${name}"></div>
-    <div class="form-group">${idx===0?'<label>Typ</label>':''}<select>${ASSET_TYPES.map(t=>`<option${t===type?' selected':''}>${t}</option>`).join('')}</select></div>
-    <div class="form-group">${idx===0?'<label>Wartość (zł)</label>':''}<input type="number" placeholder="0" value="${value}" min="0"></div>
-    <div class="form-group">${idx===0?'<label>Wpłata / wypłata (zł)</label>':''}<input type="number" placeholder="0" value="${flow}" title="Zmiana wpłat od poprzedniego snapshotu. Dopłaciłeś? Wpisz dodatnią kwotę. Wypłaciłeś? Wpisz ujemną."></div>
+    <div class="form-group">${idx===0?'<label>Nazwa</label>':''}<input type="text" placeholder="np. IKE – WEBN" value="${name}" oninput="onSnapRowChange(this)"></div>
+    <div class="form-group">${idx===0?'<label>Typ</label>':''}<select onchange="onSnapRowChange(this)">${ASSET_TYPES.map(t=>`<option${t===type?' selected':''}>${t}</option>`).join('')}</select></div>
+    <div class="form-group">${idx===0?'<label>Wartość (zł)</label>':''}<input type="number" placeholder="0" value="${value}" min="0" oninput="onSnapRowChange(this)"></div>
+    <div class="form-group">${idx===0?'<label>Wpłata / wypłata (zł)</label>':''}<input type="number" placeholder="0" value="${flow}" ${isCash?'readonly':''} title="${isCash?'Gotówka nie generuje zysku — liczone automatycznie z różnicy wartości.':'Zmiana wpłat od poprzedniego snapshotu. Dopłaciłeś? Wpisz dodatnią kwotę. Wypłaciłeś? Wpisz ujemną.'}"></div>
     <button class="btn btn-ghost" style="height:38px;margin-top:${idx===0?'22px':'0'}" onclick="this.parentElement.remove()">${ICON_X}</button>`;
   wrap.appendChild(div);
+  if (isCash) recomputeCashFlow(div);
 }
 
 async function saveSnapshot() {
@@ -1088,11 +1124,12 @@ function addEditRow(name='', type='ETF (akcje)', value='', flow='') {
   const idx = wrap.children.length;
   const div = document.createElement('div');
   div.className = 'form-grid';
+  const isCash = type === 'Gotówka';
   div.innerHTML = `
-    <div class="form-group">${idx===0?'<label>Nazwa</label>':''}<input type="text" placeholder="np. IKE – WEBN" value="${name}"></div>
-    <div class="form-group">${idx===0?'<label>Typ</label>':''}<select>${ASSET_TYPES.map(t=>`<option${t===type?' selected':''}>${t}</option>`).join('')}</select></div>
-    <div class="form-group">${idx===0?'<label>Wartość (zł)</label>':''}<input type="number" placeholder="0" value="${value}" min="0"></div>
-    <div class="form-group">${idx===0?'<label>Wpłata / wypłata (zł)</label>':''}<input type="number" placeholder="0" value="${flow}" title="Zmiana wpłat od poprzedniego snapshotu. Dopłaciłeś? Wpisz dodatnią kwotę. Wypłaciłeś? Wpisz ujemną."></div>
+    <div class="form-group">${idx===0?'<label>Nazwa</label>':''}<input type="text" placeholder="np. IKE – WEBN" value="${name}" oninput="onSnapRowChange(this)"></div>
+    <div class="form-group">${idx===0?'<label>Typ</label>':''}<select onchange="onSnapRowChange(this)">${ASSET_TYPES.map(t=>`<option${t===type?' selected':''}>${t}</option>`).join('')}</select></div>
+    <div class="form-group">${idx===0?'<label>Wartość (zł)</label>':''}<input type="number" placeholder="0" value="${value}" min="0" oninput="onSnapRowChange(this)"></div>
+    <div class="form-group">${idx===0?'<label>Wpłata / wypłata (zł)</label>':''}<input type="number" placeholder="0" value="${flow}" ${isCash?'readonly':''} title="${isCash?'Gotówka nie generuje zysku — liczone automatycznie z różnicy wartości.':'Zmiana wpłat od poprzedniego snapshotu. Dopłaciłeś? Wpisz dodatnią kwotę. Wypłaciłeś? Wpisz ujemną.'}"></div>
     <button class="btn btn-ghost" style="height:38px;margin-top:${idx===0?'22px':'0'}" onclick="this.parentElement.remove()">${ICON_X}</button>`;
   wrap.appendChild(div);
 }
