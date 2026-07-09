@@ -158,6 +158,23 @@
   .del-btn:hover { color: var(--negative); }
   .edit-btn { background: none; border: none; color: var(--text3); cursor: pointer; font-size: 14px; padding: 0 4px; transition: color 0.2s; }
   .edit-btn:hover { color: var(--accent2); }
+  .del-btn, .edit-btn, .modal-close { display: inline-flex; align-items: center; justify-content: center; }
+
+  /* ── EXPANDABLE ROWS ── */
+  .expand-cell { width: 26px; padding-right: 0 !important; }
+  .chevron-icon { color: var(--text3); transition: transform 0.2s ease, color 0.2s ease; }
+  .chevron-icon.expanded { transform: rotate(90deg); color: var(--accent); }
+  .asset-row, .snap-row { cursor: pointer; }
+  .asset-row:hover td, .snap-row:hover td { background: var(--surface2); }
+  .asset-detail-row td, .snap-detail-row td { background: var(--surface2); padding: 16px 20px; }
+  .asset-detail-inner { display: flex; gap: 24px; align-items: stretch; flex-wrap: wrap; }
+  .asset-detail-chart { flex: 1 1 220px; min-width: 200px; height: 140px; position: relative; }
+  .asset-detail-table { flex: 2 1 320px; min-width: 260px; }
+  .no-chart-note { color: var(--text3); font-size: 11px; display: flex; align-items: center; justify-content: center; height: 100%; text-align: center; }
+  .mini-history-table { width: 100%; border-collapse: collapse; }
+  .mini-history-table th { text-align: left; font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text3); padding: 6px 10px; border-bottom: 1px solid var(--border); font-weight: 400; }
+  .mini-history-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); color: var(--text2); font-size: 12px; }
+  .mini-history-table tr:last-child td { border-bottom: none; }
 
   .proj-controls { display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
   .proj-control { display: flex; align-items: center; gap: 8px; }
@@ -217,6 +234,10 @@
     .form-grid { grid-template-columns: 1fr 1fr; }
     .form-grid .btn { grid-column: 1/-1; }
     header { flex-direction: column; align-items: flex-start; gap: 12px; }
+    .nav-tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .nav-tabs::-webkit-scrollbar { display: none; }
+    .nav-tab { flex-shrink: 0; }
+    .asset-detail-inner { flex-direction: column; }
   }
 </style>
 </head>
@@ -234,7 +255,7 @@
       <input type="text" id="setup-username" autocomplete="username" onkeydown="if(event.key==='Enter')doSetup()">
     </div>
     <div class="auth-field">
-      <label>Hasło</l/wynikiabel>
+      <label>Hasło</label>
       <input type="password" id="setup-password" onkeydown="if(event.key==='Enter')doSetup()">
     </div>
     <div class="auth-field">
@@ -313,6 +334,10 @@
         <div class="stat-sub" id="stat-period">— miesięcy śledzenia</div>
       </div>
     </div>
+    <div class="card grid-full">
+      <div class="card-title">Wyniki per aktywo</div>
+      <div id="asset-breakdown-wrap"><div class="empty">Brak danych</div></div>
+  </div>
     <div class="grid-2">
       <div class="card">
         <div class="card-title">Alokacja według typu</div>
@@ -323,10 +348,6 @@
         <div class="chart-wrap"><canvas id="donut-chart"></canvas></div>
       </div>
     </div>
-    <div class="card grid-full">
-      <div class="card-title">Wyniki per aktywo</div>
-      <div id="asset-breakdown-wrap"><div class="empty">Brak danych</div></div>
-  </div>
     <div class="card grid-full">
       <div class="card-title">Historia wartości</div>
       <div class="tabs">
@@ -349,7 +370,7 @@
       <div id="snapshot-rows"></div>
       <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
         <button class="btn btn-ghost" onclick="addSnapRow()">+ Dodaj pozycję</button>
-        <button class="btn" id="save-btn" onclick="saveSnapshot()">💾 Zapisz snapshot</button>
+        <button class="btn" id="save-btn" onclick="saveSnapshot()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>Zapisz snapshot</button>
       </div>
     </div>
   </div>
@@ -403,9 +424,9 @@
     <div class="card grid-full">
       <div class="section-title">Zarządzanie danymi</div>
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:32px">
-        <button class="btn btn-ghost" onclick="exportData()">⬇ Eksportuj JSON</button>
+        <button class="btn btn-ghost" onclick="exportData()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>Eksportuj JSON</button>
         <label class="btn btn-ghost" style="cursor:pointer">
-          ⬆ Importuj JSON
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>Importuj JSON
           <input type="file" accept=".json" style="display:none" onchange="importData(this)">
         </label>
       </div>
@@ -476,7 +497,7 @@
 <!-- EDIT SNAPSHOT MODAL -->
 <div class="modal-overlay" id="edit-modal" style="display:none" onclick="if(event.target===this)closeEditModal()">
   <div class="modal">
-    <button class="modal-close" onclick="closeEditModal()">✕</button>
+    <button class="modal-close" onclick="closeEditModal()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
     <div class="modal-title">Edytuj snapshot</div>
     <div class="date-input-row">
       <label>Data:</label>
@@ -485,7 +506,7 @@
     <div id="edit-snap-rows"></div>
     <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
       <button class="btn btn-ghost" onclick="addEditRow()">+ Dodaj pozycję</button>
-      <button class="btn" id="edit-save-btn" onclick="saveEditSnapshot()">💾 Zapisz zmiany</button>
+      <button class="btn" id="edit-save-btn" onclick="saveEditSnapshot()"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:6px"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>Zapisz zmiany</button>
     </div>
   </div>
 </div>
@@ -493,7 +514,7 @@
 <!-- RESET PASSWORD MODAL -->
 <div class="modal-overlay" id="reset-pwd-modal" style="display:none" onclick="if(event.target===this)closeResetModal()">
   <div class="modal" style="max-width:420px">
-    <button class="modal-close" onclick="closeResetModal()">✕</button>
+    <button class="modal-close" onclick="closeResetModal()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
     <div class="modal-title">Resetuj hasło</div>
     <p style="color:var(--text2);font-size:12px;margin-bottom:20px" id="reset-pwd-label"></p>
     <div class="form-group" style="margin-bottom:12px">
@@ -520,6 +541,15 @@ let currentUser = null;
 let donutChart = null, histChart = null, projChart = null;
 let histView = 'total';
 let editingSnapId = null, resetUserId = null;
+let expandedAssetNames = new Set(), expandedSnapIds = new Set();
+let assetSparkCharts = {};
+let totalRowExpanded = false, totalSparkChart = null;
+
+const ICON_EDIT = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>';
+const ICON_X = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+function chevronSvg(expanded) {
+  return `<svg class="chevron-icon${expanded?' expanded':''}" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>`;
+}
 
 // ==================== API ====================
 async function api(method, path, body) {
@@ -606,6 +636,9 @@ async function doLogout() {
   await api('POST', '/auth/logout').catch(() => {});
   currentUser = null;
   snapshots = []; assetDefs = [];
+  expandedAssetNames.clear(); expandedSnapIds.clear(); totalRowExpanded = false;
+  Object.values(assetSparkCharts).forEach(c => c && c.destroy()); assetSparkCharts = {};
+  if (totalSparkChart) { totalSparkChart.destroy(); totalSparkChart = null; }
   if (donutChart) { donutChart.destroy(); donutChart = null; }
   if (histChart) { histChart.destroy(); histChart = null; }
   if (projChart) { projChart.destroy(); projChart = null; }
@@ -691,9 +724,14 @@ function renderStats() {
 }
 
 function renderAssetTable(snap) {
+  Object.values(assetSparkCharts).forEach(c => c && c.destroy());
+  assetSparkCharts = {};
+  if (totalSparkChart) { totalSparkChart.destroy(); totalSparkChart = null; }
+
   const rows = snap.assets
     .map(a => ({ ...a, gain: a.value - a.invested, gainPct: a.invested > 0 ? (a.value - a.invested) / a.invested * 100 : null }))
     .sort((a, b) => b.value - a.value);
+  window._assetRows = rows;
 
   const totalValue = rows.reduce((s, a) => s + a.value, 0);
   const totalInvest = rows.reduce((s, a) => s + a.invested, 0);
@@ -703,6 +741,7 @@ function renderAssetTable(snap) {
   const html = `
     <table class="history-table">
       <thead><tr>
+        <th class="expand-cell"></th>
         <th>Aktywo</th>
         <th>Typ</th>
         <th style="text-align:right">Wartość</th>
@@ -711,26 +750,145 @@ function renderAssetTable(snap) {
         <th style="text-align:right">Zwrot</th>
       </tr></thead>
       <tbody>
-        ${rows.map(a => `<tr>
+        ${rows.map((a, idx) => {
+          const isOpen = expandedAssetNames.has(a.name);
+          return `<tr class="asset-row" onclick="toggleAssetDetail(${idx})">
+          <td class="expand-cell">${chevronSvg(isOpen)}</td>
           <td style="color:var(--text)">${a.name}</td>
           <td>${a.type}</td>
           <td style="text-align:right;color:var(--accent)">${fmt(a.value)}</td>
           <td style="text-align:right">${a.invested > 0 ? fmt(a.invested) : '—'}</td>
           <td style="text-align:right" class="${a.gain >= 0 ? 'positive' : 'negative'}">${a.invested > 0 ? (a.gain >= 0 ? '+' : '') + fmt(a.gain) : '—'}</td>
           <td style="text-align:right" class="${a.gainPct !== null && a.gainPct >= 0 ? 'positive' : 'negative'}">${a.gainPct !== null ? (a.gainPct >= 0 ? '+' : '') + a.gainPct.toFixed(1) + '%' : '—'}</td>
-        </tr>`).join('')}
+        </tr>
+        <tr class="asset-detail-row" id="asset-detail-${idx}" style="display:${isOpen ? 'table-row' : 'none'}">
+          <td colspan="7">
+            <div class="asset-detail-inner">
+              <div class="asset-detail-chart" id="asset-chart-wrap-${idx}"></div>
+              <div class="asset-detail-table">${historyTableHtml(getAssetHistory(a.name))}</div>
+            </div>
+          </td>
+        </tr>`;
+        }).join('')}
       </tbody>
       <tfoot>
-        <tr style="border-top: 1px solid var(--border)">
+        <tr class="asset-row" onclick="toggleTotalDetail()" style="border-top: 1px solid var(--border)">
+          <td class="expand-cell">${chevronSvg(totalRowExpanded)}</td>
           <td style="color:var(--text);font-weight:500" colspan="2">Łącznie</td>
           <td style="text-align:right;color:var(--accent);font-weight:500">${fmt(totalValue)}</td>
           <td style="text-align:right;color:var(--text);font-weight:500">${fmt(totalInvest)}</td>
           <td style="text-align:right;font-weight:500" class="${totalGain >= 0 ? 'positive' : 'negative'}">${(totalGain >= 0 ? '+' : '') + fmt(totalGain)}</td>
           <td style="text-align:right;font-weight:500" class="${totalGainPct !== null && totalGainPct >= 0 ? 'positive' : 'negative'}">${totalGainPct !== null ? (totalGainPct >= 0 ? '+' : '') + totalGainPct.toFixed(1) + '%' : '—'}</td>
         </tr>
+        <tr class="asset-detail-row" id="total-detail-row" style="display:${totalRowExpanded ? 'table-row' : 'none'}">
+          <td colspan="7">
+            <div class="asset-detail-inner">
+              <div class="asset-detail-chart" id="total-chart-wrap"></div>
+              <div class="asset-detail-table">${historyTableHtml(getTotalHistory())}</div>
+            </div>
+          </td>
+        </tr>
       </tfoot>
     </table>`;
   el('asset-breakdown-wrap').innerHTML = html;
+
+  rows.forEach((a, idx) => { if (expandedAssetNames.has(a.name)) renderAssetSparkline(idx, a.name); });
+  if (totalRowExpanded) renderTotalSparkline();
+}
+
+function getAssetHistory(name) {
+  return snapshots
+    .map(s => {
+      const a = s.assets.find(x => x.name === name);
+      return a ? { date: s.date, value: a.value, invested: a.invested } : null;
+    })
+    .filter(Boolean);
+}
+
+function getTotalHistory() {
+  return snapshots.map(s => ({ date: s.date, value: totalVal(s), invested: totalInvested(s) }));
+}
+
+function historyTableHtml(hist) {
+  const withChange = hist.map((h, i) => ({ ...h, change: i > 0 ? h.value - hist[i-1].value : null }));
+  const rowsHtml = [...withChange].reverse().map(h => `<tr>
+    <td>${h.date}</td>
+    <td style="text-align:right;color:var(--accent)">${fmt(h.value)}</td>
+    <td style="text-align:right">${h.invested > 0 ? fmt(h.invested) : '—'}</td>
+    <td style="text-align:right" class="${h.change === null ? '' : h.change >= 0 ? 'positive' : 'negative'}">${h.change === null ? '—' : (h.change >= 0 ? '+' : '') + fmt(h.change)}</td>
+  </tr>`).join('');
+  return `<table class="mini-history-table">
+    <thead><tr><th>Data</th><th style="text-align:right">Wartość</th><th style="text-align:right">Wpłacono</th><th style="text-align:right">Zmiana</th></tr></thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>`;
+}
+
+function buildSparkline(wrap, hist) {
+  if (!wrap) return null;
+  if (hist.length < 2) {
+    wrap.innerHTML = '<div class="no-chart-note">Za mało danych<br>do wykresu</div>';
+    return null;
+  }
+  wrap.innerHTML = '<canvas></canvas>';
+  return new Chart(wrap.querySelector('canvas').getContext('2d'), {
+    type: 'line',
+    data: { labels: hist.map(h => h.date), datasets: [{ data: hist.map(h => h.value), borderColor: '#00ff9f', backgroundColor: 'rgba(0,255,159,0.08)', fill: true, tension: 0.4, pointRadius: 3, pointBackgroundColor: '#00ff9f', borderWidth: 2 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => ` ${fmt(c.raw)}` }, bodyFont: { family: 'DM Mono' }, backgroundColor: '#131820', borderColor: '#1a2332', borderWidth: 1 } },
+      scales: {
+        x: { ticks: { color: '#2a4a6a', font: { family: 'DM Mono', size: 9 }, maxTicksLimit: 5 }, grid: { display: false } },
+        y: { ticks: { color: '#2a4a6a', font: { family: 'DM Mono', size: 9 }, callback: v => fmt(v) }, grid: { color: '#1a2332' } }
+      }
+    }
+  });
+}
+
+function renderAssetSparkline(idx, name) {
+  if (assetSparkCharts[idx]) { assetSparkCharts[idx].destroy(); delete assetSparkCharts[idx]; }
+  const chart = buildSparkline(el('asset-chart-wrap-' + idx), getAssetHistory(name));
+  if (chart) assetSparkCharts[idx] = chart;
+}
+
+function renderTotalSparkline() {
+  if (totalSparkChart) { totalSparkChart.destroy(); totalSparkChart = null; }
+  totalSparkChart = buildSparkline(el('total-chart-wrap'), getTotalHistory());
+}
+
+function toggleAssetDetail(idx) {
+  const a = (window._assetRows || [])[idx];
+  if (!a) return;
+  const detailRow = el('asset-detail-' + idx);
+  const chevron = detailRow.previousElementSibling.querySelector('.chevron-icon');
+  const isOpen = detailRow.style.display !== 'none';
+  if (isOpen) {
+    detailRow.style.display = 'none';
+    chevron.classList.remove('expanded');
+    expandedAssetNames.delete(a.name);
+    if (assetSparkCharts[idx]) { assetSparkCharts[idx].destroy(); delete assetSparkCharts[idx]; }
+  } else {
+    detailRow.style.display = 'table-row';
+    chevron.classList.add('expanded');
+    expandedAssetNames.add(a.name);
+    renderAssetSparkline(idx, a.name);
+  }
+}
+
+function toggleTotalDetail() {
+  const detailRow = el('total-detail-row');
+  const chevron = detailRow.previousElementSibling.querySelector('.chevron-icon');
+  const isOpen = detailRow.style.display !== 'none';
+  if (isOpen) {
+    detailRow.style.display = 'none';
+    chevron.classList.remove('expanded');
+    totalRowExpanded = false;
+    if (totalSparkChart) { totalSparkChart.destroy(); totalSparkChart = null; }
+  } else {
+    detailRow.style.display = 'table-row';
+    chevron.classList.add('expanded');
+    totalRowExpanded = true;
+    renderTotalSparkline();
+  }
 }
 
 function renderAllocation() {
@@ -790,19 +948,39 @@ function renderHistoryChart() {
 function renderHistoryTable() {
   const wrap = el('history-table-wrap');
   if (!snapshots.length) { wrap.innerHTML = '<div class="empty">Brak snapshotów</div>'; return; }
-  const rows = [...snapshots].reverse().map((snap, i, arr) => {
+  const arr = [...snapshots].reverse();
+  const rows = arr.map((snap, i) => {
     const tv = totalVal(snap), prev = arr[i+1], prevTv = prev ? totalVal(prev) : null;
     const change = prevTv !== null ? tv - prevTv : null;
     const changePct = change !== null && prevTv > 0 ? (change/prevTv*100).toFixed(1) : null;
-    return `<tr>
+    const summary = snap.assets.map(a=>a.name).join(' · ');
+    const isOpen = expandedSnapIds.has(snap.id);
+    return `<tr class="snap-row" onclick="toggleSnapDetail(${snap.id})">
+      <td class="expand-cell">${chevronSvg(isOpen)}</td>
       <td style="color:var(--text)">${snap.date}</td>
       <td style="color:var(--accent);font-weight:500">${fmt(tv)}</td>
       <td class="${change===null?'':change>=0?'positive':'negative'}">${change===null?'—':`${change>=0?'+':''}${fmt(change)} (${changePct}%)`}</td>
-      <td style="max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${snap.assets.map(a=>`<span style="color:var(--text3)">${a.name}:</span> ${fmt(a.value)}`).join(' · ')}</td>
-      <td><button class="edit-btn" title="Edytuj" onclick="openEditModal(${snap.id})">✎</button> <button class="del-btn" title="Usuń" onclick="deleteSnapshot(${snap.id})">✕</button></td>
+      <td style="max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${summary}">${summary}</td>
+      <td onclick="event.stopPropagation()"><button class="edit-btn" title="Edytuj" onclick="openEditModal(${snap.id})">${ICON_EDIT}</button> <button class="del-btn" title="Usuń" onclick="deleteSnapshot(${snap.id})">${ICON_X}</button></td>
+    </tr>
+    <tr class="snap-detail-row" id="snap-detail-${snap.id}" style="display:${isOpen?'table-row':'none'}">
+      <td colspan="6">
+        <table class="mini-history-table">
+          <thead><tr><th>Aktywo</th><th>Typ</th><th style="text-align:right">Wartość</th><th style="text-align:right">Wpłacono</th></tr></thead>
+          <tbody>${snap.assets.map(a=>`<tr><td style="color:var(--text)">${a.name}</td><td>${a.type}</td><td style="text-align:right;color:var(--accent)">${fmt(a.value)}</td><td style="text-align:right">${a.invested>0?fmt(a.invested):'—'}</td></tr>`).join('')}</tbody>
+        </table>
+      </td>
     </tr>`;
   }).join('');
-  wrap.innerHTML = `<table class="history-table"><thead><tr><th>Data</th><th>Wartość</th><th>Zmiana</th><th>Aktywa</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+  wrap.innerHTML = `<table class="history-table"><thead><tr><th class="expand-cell"></th><th>Data</th><th>Wartość</th><th>Zmiana</th><th>Aktywa</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function toggleSnapDetail(id) {
+  const detailRow = el('snap-detail-' + id);
+  const chevron = detailRow.previousElementSibling.querySelector('.chevron-icon');
+  const isOpen = detailRow.style.display !== 'none';
+  if (isOpen) { detailRow.style.display = 'none'; chevron.classList.remove('expanded'); expandedSnapIds.delete(id); }
+  else { detailRow.style.display = 'table-row'; chevron.classList.add('expanded'); expandedSnapIds.add(id); }
 }
 
 // ==================== SNAPSHOT FORM ====================
@@ -827,7 +1005,7 @@ function addSnapRow(name='', type='ETF (akcje)', value='', invested='') {
     <div class="form-group">${idx===0?'<label>Typ</label>':''}<select>${ASSET_TYPES.map(t=>`<option${t===type?' selected':''}>${t}</option>`).join('')}</select></div>
     <div class="form-group">${idx===0?'<label>Wartość (zł)</label>':''}<input type="number" placeholder="0" value="${value}" min="0"></div>
     <div class="form-group">${idx===0?'<label>Łącznie wpłacono (zł)</label>':''}<input type="number" placeholder="0" value="${invested}" min="0"></div>
-    <button class="btn btn-ghost" style="height:38px;margin-top:${idx===0?'22px':'0'}" onclick="this.parentElement.remove()">✕</button>`;
+    <button class="btn btn-ghost" style="height:38px;margin-top:${idx===0?'22px':'0'}" onclick="this.parentElement.remove()">${ICON_X}</button>`;
   wrap.appendChild(div);
 }
 
@@ -887,7 +1065,7 @@ function addEditRow(name='', type='ETF (akcje)', value='', invested='') {
     <div class="form-group">${idx===0?'<label>Typ</label>':''}<select>${ASSET_TYPES.map(t=>`<option${t===type?' selected':''}>${t}</option>`).join('')}</select></div>
     <div class="form-group">${idx===0?'<label>Wartość (zł)</label>':''}<input type="number" placeholder="0" value="${value}" min="0"></div>
     <div class="form-group">${idx===0?'<label>Łącznie wpłacono (zł)</label>':''}<input type="number" placeholder="0" value="${invested}" min="0"></div>
-    <button class="btn btn-ghost" style="height:38px;margin-top:${idx===0?'22px':'0'}" onclick="this.parentElement.remove()">✕</button>`;
+    <button class="btn btn-ghost" style="height:38px;margin-top:${idx===0?'22px':'0'}" onclick="this.parentElement.remove()">${ICON_X}</button>`;
   wrap.appendChild(div);
 }
 
@@ -930,7 +1108,7 @@ function addDefRow(name='', type='ETF (akcje)') {
   div.innerHTML = `
     <div class="form-group">${idx===0?'<label>Nazwa</label>':''}<input type="text" placeholder="np. IKE – WEBN" value="${name}"></div>
     <div class="form-group">${idx===0?'<label>Typ</label>':''}<select>${ASSET_TYPES.map(t=>`<option${t===type?' selected':''}>${t}</option>`).join('')}</select></div>
-    <button class="btn btn-ghost" style="height:38px;margin-top:${idx===0?'22px':'0'}" onclick="this.parentElement.remove()">✕</button>`;
+    <button class="btn btn-ghost" style="height:38px;margin-top:${idx===0?'22px':'0'}" onclick="this.parentElement.remove()">${ICON_X}</button>`;
   wrap.appendChild(div);
 }
 
